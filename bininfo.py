@@ -70,7 +70,7 @@ BIN_LOOKUP_SERVICES = [
 _service_index_lock = threading.Lock()
 _service_index = 0
 
-def round_robin_bin_lookup(card_number: str, proxy=None):
+def round_robin_bin_lookup(card_number: str, proxy=None, timeout_seconds=10):
     global _service_index
 
     bin_number = card_number[:6]
@@ -79,6 +79,8 @@ def round_robin_bin_lookup(card_number: str, proxy=None):
 
     num_services = len(BIN_LOOKUP_SERVICES)
     attempts = 0
+
+    default_result = (f"{bin_number} - Unknown", "Unknown Bank", "Unknown Country")
 
     while attempts < num_services:
         with _service_index_lock:
@@ -91,29 +93,35 @@ def round_robin_bin_lookup(card_number: str, proxy=None):
             url = service["url"]
             auth = service.get("auth")
 
-            if service.get("post", False):  # POST
+            if service.get("post", False):
                 params = service.get("auth", {}).copy()
                 params["bin"] = bin_number
-                resp = requests.post(url, headers=headers, data=params, proxies=proxy, timeout=15)
-            else:  # GET
+                resp = requests.post(url, headers=headers, data=params, proxies=proxy, timeout=timeout_seconds)
+            else:
                 if not url.endswith("/"):
                     url += "/"
                 url += bin_number
                 if auth:
                     headers.update(auth)
-                resp = requests.get(url, headers=headers, params=params, proxies=proxy, timeout=15)
+                resp = requests.get(url, headers=headers, params=params, proxies=proxy, timeout=timeout_seconds)
 
             if resp.status_code == 200:
-                data = resp.json()
-                scheme, card_type, level, bank, country = service["parse"](data)
-                country_clean = re.sub(r"\s*\(.*?\)", "", country).strip()
-                result = (f"{bin_number} - {level} - {card_type} - {scheme}", bank, country_clean)
-                BIN_CACHE[bin_number] = result
-                return result
+                try:
+                    data = resp.json()
+                    scheme, card_type, level, bank, country = service["parse"](data)
+                    country_clean = re.sub(r"\s*\(.*?\)", "", country).strip()
+                    result = (f"{bin_number} - {level} - {card_type} - {scheme}", bank, country_clean)
+                    BIN_CACHE[bin_number] = result
+                    return result
+                except Exception:
+                    BIN_CACHE[bin_number] = default_result
+                    return default_result
+            else:
+                attempts += 1
+                continue
         except Exception:
             attempts += 1
             continue
 
-    result = (f"{bin_number} - ERROR", "Unknown Bank", "Unknown Country")
-    BIN_CACHE[bin_number] = result
-    return result
+    BIN_CACHE[bin_number] = default_result
+    return default_result
