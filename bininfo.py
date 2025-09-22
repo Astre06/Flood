@@ -35,6 +35,36 @@ BIN_LOOKUP_SERVICES = [
             data.get("country_name", "Unknown Country"),
         ),
     },
+    {
+        "name": "freebinchecker",
+        "url": "https://www.freebinchecker.com/api/bin/",
+        "headers": {"User-Agent": "Mozilla/5.0"},
+        "params": {},
+        "api_key": False,
+        "post": False,
+        "parse": lambda data: (
+            data.get("brand", "Unknown").upper(),
+            data.get("type", "Unknown").upper(),
+            data.get("level", "STANDARD").upper(),
+            data.get("bank", "Unknown Bank"),
+            data.get("country", "Unknown Country"),
+        ),
+    },
+    {
+        "name": "pulse_pst_net",
+        "url": "https://pulse.pst.net/api/bin/",
+        "headers": {"User-Agent": "Mozilla/5.0"},
+        "params": {},
+        "api_key": False,
+        "post": False,
+        "parse": lambda data: (
+            data.get("brand", "Unknown").upper(),
+            data.get("type", "Unknown").upper(),
+            data.get("level", "STANDARD").upper(),
+            data.get("bank", "Unknown Bank"),
+            data.get("country", "Unknown Country"),
+        ),
+    },
 ]
 
 _service_index_lock = threading.Lock()
