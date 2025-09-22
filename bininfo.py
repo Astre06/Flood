@@ -7,10 +7,11 @@ BIN_CACHE = {}
 BIN_LOOKUP_SERVICES = [
     {
         "name": "binlist",
-        "url": "https://lookup.binlist.net/",
+        "url": "https://lookup.binlist.io/",
         "headers": {"Accept-Version": "3", "User-Agent": "Mozilla/5.0"},
         "params": {},
         "api_key": False,
+        "post": False,
         "parse": lambda data: (
             data.get("scheme", "N/A").upper(),
             data.get("type", "N/A").upper(),
@@ -19,7 +20,21 @@ BIN_LOOKUP_SERVICES = [
             data.get("country", {}).get("name", "Unknown Country"),
         ),
     },
-    
+    {
+        "name": "antipublic_bins",
+        "url": "https://bins.antipublic.cc/bins/",
+        "headers": {},
+        "params": {},
+        "api_key": False,
+        "post": False,
+        "parse": lambda data: (
+            data.get("brand", "Unknown").upper(),
+            data.get("type", "Unknown").upper(),
+            "STANDARD",
+            data.get("bank", "Unknown Bank"),
+            data.get("country_name", "Unknown Country"),
+        ),
+    },
 ]
 
 _service_index_lock = threading.Lock()
@@ -27,8 +42,8 @@ _service_index = 0
 
 def round_robin_bin_lookup(card_number: str, proxy=None):
     global _service_index
-    bin_number = card_number[:6]
 
+    bin_number = card_number[:6]
     if bin_number in BIN_CACHE:
         return BIN_CACHE[bin_number]
 
@@ -39,18 +54,18 @@ def round_robin_bin_lookup(card_number: str, proxy=None):
         with _service_index_lock:
             service = BIN_LOOKUP_SERVICES[_service_index]
             _service_index = (_service_index + 1) % num_services
+
         try:
             headers = service.get("headers", {}).copy()
             params = {}
             url = service["url"]
             auth = service.get("auth")
 
-            if service.get("post", False):
-                # POST request with auth data for some services
+            if service.get("post", False):  # POST
                 params = service.get("auth", {}).copy()
                 params["bin"] = bin_number
                 resp = requests.post(url, headers=headers, data=params, proxies=proxy, timeout=15)
-            else:
+            else:  # GET
                 if not url.endswith("/"):
                     url += "/"
                 url += bin_number
@@ -72,4 +87,3 @@ def round_robin_bin_lookup(card_number: str, proxy=None):
     result = (f"{bin_number} - ERROR", "Unknown Bank", "Unknown Country")
     BIN_CACHE[bin_number] = result
     return result
-
