@@ -36,21 +36,6 @@ BIN_LOOKUP_SERVICES = [
         ),
     },
     {
-        "name": "freebinchecker",
-        "url": "https://www.freebinchecker.com/api/bin/",
-        "headers": {"User-Agent": "Mozilla/5.0"},
-        "params": {},
-        "api_key": False,
-        "post": False,
-        "parse": lambda data: (
-            data.get("brand", "Unknown").upper(),
-            data.get("type", "Unknown").upper(),
-            data.get("level", "STANDARD").upper(),
-            data.get("bank", "Unknown Bank"),
-            data.get("country", "Unknown Country"),
-        ),
-    },
-    {
         "name": "pulse_pst_net",
         "url": "https://pulse.pst.net/api/bin/",
         "headers": {"User-Agent": "Mozilla/5.0"},
@@ -70,17 +55,39 @@ BIN_LOOKUP_SERVICES = [
 _service_index_lock = threading.Lock()
 _service_index = 0
 
-def round_robin_bin_lookup(card_number: str, card_index: int, proxy=None, timeout_seconds=10):
-    """
-    Use card_index modulo number of services to pick the service for this card.
-    This guarantees first card uses first service, second card second service, etc.
-    """
-    BIN_LOOKUP_SERVICES = [...]  # your existing BIN lookup list
+def lookup_single_service(bin_number: str, service: dict, proxy=None, timeout_seconds=10):
+    """Helper to query one bin info service and parse the response."""
+    try:
+        headers = service.get("headers", {}).copy()
+        params = {}
+        url = service["url"]
+        auth = service.get("auth")
 
-    service_count = len(BIN_LOOKUP_SERVICES)
-    selected_index = card_index % service_count
-    service = BIN_LOOKUP_SERVICES[selected_index]
+        if service.get("post", False):
+            params = service.get("auth", {}).copy()
+            params["bin"] = bin_number
+            resp = requests.post(url, headers=headers, data=params, proxies=proxy, timeout=timeout_seconds)
+        else:
+            if not url.endswith("/"):
+                url += "/"
+            url += bin_number
+            if auth:
+                headers.update(auth)
+            resp = requests.get(url, headers=headers, params=params, proxies=proxy, timeout=timeout_seconds)
 
+        if resp.status_code == 200:
+            data = resp.json()
+            scheme, card_type, level, bank, country = service["parse"](data)
+            country_clean = re.sub(r"\s*\(.*?\)", "", country).strip()
+            return (f"{bin_number} - {level} - {card_type} - {scheme}", bank, country_clean)
+        else:
+            print(f"Error response from {service['name']}: HTTP {resp.status_code}")
+            return None
+    except Exception as e:
+        print(f"Exception during request to {service['name']}: {e}")
+        return None
+
+def round_robin_bin_lookup(card_number: str, proxy=None, timeout_seconds=10):
     bin_number = card_number[:6]
     if bin_number in BIN_CACHE:
         print(f"Cache hit for BIN {bin_number}: {BIN_CACHE[bin_number]}")
@@ -88,40 +95,15 @@ def round_robin_bin_lookup(card_number: str, card_index: int, proxy=None, timeou
 
     default_result = (f"{bin_number} - Unknown", "Unknown Bank", "Unknown Country")
 
-    try:
+    for service in BIN_LOOKUP_SERVICES:
         print(f"Trying BIN lookup using site: {service['name']} for BIN {bin_number}")
-        url = service["url"]
-        if not url.endswith("/"):
-            url += "/"
-        url += bin_number
-        headers = service.get("headers", {})
-        auth = service.get("auth", {})
-
-        if service.get("post", False):
-            params = auth.copy()
-            params["bin"] = bin_number
-            resp = requests.post(url, headers=headers, data=params, proxies=proxy, timeout=timeout_seconds)
+        result = lookup_single_service(bin_number, service, proxy, timeout_seconds)
+        if result:
+            print(f"Success from {service['name']}: {result}")
+            BIN_CACHE[bin_number] = result
+            return result
         else:
-            if auth:
-                headers.update(auth)
-            resp = requests.get(url, headers=headers, proxies=proxy, timeout=timeout_seconds)
+            print(f"Failed to get BIN info from {service['name']}")
 
-        if resp.status_code == 200:
-            try:
-                data = resp.json()
-                scheme, card_type, level, bank, country = service["parse"](data)
-                country_clean = re.sub(r"\s*\(.*?\)", "", country).strip()
-                result = (f"{bin_number} - {level} - {card_type} - {scheme}", bank, country_clean)
-                BIN_CACHE[bin_number] = result
-                print(f"Success from {service['name']}: {result}")
-                return result
-            except Exception as e:
-                print(f"Parsing error from {service['name']}: {e}")
-                return default_result
-        else:
-            print(f"Error response from {service['name']}: HTTP {resp.status_code}")
-            return default_result
-    except Exception as e:
-        print(f"Exception during request to {service['name']}: {e}")
-        return default_result
-
+    print(f"All BIN lookup services failed for BIN {bin_number}. Returning Unknown.")
+    return default_result
