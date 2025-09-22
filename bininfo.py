@@ -1,6 +1,8 @@
 import requests
 import re
 import threading
+import asyncio
+from playwright.async_api import async_playwright
 
 BIN_CACHE = {}
 
@@ -55,8 +57,26 @@ BIN_LOOKUP_SERVICES = [
 _service_index_lock = threading.Lock()
 _service_index = 0
 
+async def fetch_bin_info_pulse(bin_number: str):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto("https://pulse.pst.net", timeout=60000)
+        await page.fill('input.block-check-bin__input[type="tel"]', bin_number)
+        await page.click('button.block-check-bin__btn-submit')
+        await page.wait_for_selector('div.flex.flex-col.min-h-screen')
+        card_type = await page.text_content('div:has-text("Card Type") + div')
+        issuer_bank = await page.text_content('div:has-text("Issuer / Bank Name") + div')
+        country = await page.text_content('div:has-text("Country Name") + div')
+        await browser.close()
+        return {
+            "bin": bin_number,
+            "card_type": card_type.strip() if card_type else "Unknown",
+            "issuer_bank": issuer_bank.strip() if issuer_bank else "Unknown",
+            "country": country.strip() if country else "Unknown",
+        }
+
 def lookup_single_service(bin_number: str, service: dict, proxy=None, timeout_seconds=10):
-    """Helper to query one bin info service and parse the response."""
     try:
         headers = service.get("headers", {}).copy()
         params = {}
@@ -104,6 +124,21 @@ def round_robin_bin_lookup(card_number: str, proxy=None, timeout_seconds=10):
             return result
         else:
             print(f"Failed to get BIN info from {service['name']}")
+
+    print(f"Falling back to Pulse PST playwrght automation for BIN {bin_number}")
+    try:
+        info = asyncio.run(fetch_bin_info_pulse(bin_number))
+        result = (
+            f"{bin_number} - {info['card_type']} - Unknown - Unknown",
+            info["issuer_bank"],
+            info["country"]
+        )
+        if info['card_type'] != "Unknown":
+            BIN_CACHE[bin_number] = result
+        print(f"Success from Pulse PST playwright: {result}")
+        return result
+    except Exception as e:
+        print(f"Pulse PST playwright fallback failed: {e}")
 
     print(f"All BIN lookup services failed for BIN {bin_number}. Returning Unknown.")
     return default_result
