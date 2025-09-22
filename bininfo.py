@@ -70,12 +70,16 @@ BIN_LOOKUP_SERVICES = [
 _service_index_lock = threading.Lock()
 _service_index = 0
 
-def round_robin_bin_lookup(card_number: str, card_index: int = 0, proxy=None, timeout_seconds=10):
+def round_robin_bin_lookup(card_number: str, card_index: int, proxy=None, timeout_seconds=10):
     """
-    card_index: the sequential index for the current card check, used to select the BIN lookup service round robin style.
+    Use card_index modulo number of services to pick the service for this card.
+    This guarantees first card uses first service, second card second service, etc.
     """
+    BIN_LOOKUP_SERVICES = [...]  # your existing BIN lookup list
+
     service_count = len(BIN_LOOKUP_SERVICES)
-    selected_service_index = card_index % service_count
+    selected_index = card_index % service_count
+    service = BIN_LOOKUP_SERVICES[selected_index]
 
     bin_number = card_number[:6]
     if bin_number in BIN_CACHE:
@@ -83,26 +87,24 @@ def round_robin_bin_lookup(card_number: str, card_index: int = 0, proxy=None, ti
         return BIN_CACHE[bin_number]
 
     default_result = (f"{bin_number} - Unknown", "Unknown Bank", "Unknown Country")
-    service = BIN_LOOKUP_SERVICES[selected_service_index]
 
     try:
         print(f"Trying BIN lookup using site: {service['name']} for BIN {bin_number}")
-        headers = service.get("headers", {}).copy()
-        params = {}
         url = service["url"]
-        auth = service.get("auth")
+        if not url.endswith("/"):
+            url += "/"
+        url += bin_number
+        headers = service.get("headers", {})
+        auth = service.get("auth", {})
 
         if service.get("post", False):
-            params = service.get("auth", {}).copy()
+            params = auth.copy()
             params["bin"] = bin_number
             resp = requests.post(url, headers=headers, data=params, proxies=proxy, timeout=timeout_seconds)
         else:
-            if not url.endswith("/"):
-                url += "/"
-            url += bin_number
             if auth:
                 headers.update(auth)
-            resp = requests.get(url, headers=headers, params=params, proxies=proxy, timeout=timeout_seconds)
+            resp = requests.get(url, headers=headers, proxies=proxy, timeout=timeout_seconds)
 
         if resp.status_code == 200:
             try:
@@ -122,3 +124,4 @@ def round_robin_bin_lookup(card_number: str, card_index: int = 0, proxy=None, ti
     except Exception as e:
         print(f"Exception during request to {service['name']}: {e}")
         return default_result
+
