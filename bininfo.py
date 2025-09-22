@@ -118,7 +118,6 @@ def round_robin_bin_lookup(card_number: str, proxy=None, timeout_seconds=10):
                     return result
                 except Exception as e:
                     print(f"Parsing error from {service['name']}: {e}")
-                    BIN_CACHE[bin_number] = default_result
                     return default_result
             else:
                 print(f"Error response from {service['name']}: HTTP {resp.status_code}")
@@ -130,5 +129,4 @@ def round_robin_bin_lookup(card_number: str, proxy=None, timeout_seconds=10):
             continue
 
     print(f"All BIN lookup services failed for BIN {bin_number}. Returning Unknown.")
-    BIN_CACHE[bin_number] = default_result
     return default_result
