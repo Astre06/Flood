@@ -52,7 +52,7 @@ BIN_LOOKUP_SERVICES = [
     },
 ]
 
-class BinInfoRoundRobin:
+class round_robin_bin_lookup:
     def __init__(self):
         self.original_services = BIN_LOOKUP_SERVICES.copy()
         self.active_services = BIN_LOOKUP_SERVICES.copy()
@@ -173,3 +173,4 @@ bin_info_rr = BinInfoRoundRobin()
 
 # Example usage
 # result = bin_info_rr.round_robin_bin_lookup("553890")
+
