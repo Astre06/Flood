@@ -75,6 +75,7 @@ def round_robin_bin_lookup(card_number: str, proxy=None, timeout_seconds=10):
 
     bin_number = card_number[:6]
     if bin_number in BIN_CACHE:
+        print(f"Cache hit for BIN {bin_number}: {BIN_CACHE[bin_number]}")
         return BIN_CACHE[bin_number]
 
     num_services = len(BIN_LOOKUP_SERVICES)
@@ -88,6 +89,7 @@ def round_robin_bin_lookup(card_number: str, proxy=None, timeout_seconds=10):
             _service_index = (_service_index + 1) % num_services
 
         try:
+            print(f"Trying BIN lookup using site: {service['name']} for BIN {bin_number}")
             headers = service.get("headers", {}).copy()
             params = {}
             url = service["url"]
@@ -112,16 +114,21 @@ def round_robin_bin_lookup(card_number: str, proxy=None, timeout_seconds=10):
                     country_clean = re.sub(r"\s*\(.*?\)", "", country).strip()
                     result = (f"{bin_number} - {level} - {card_type} - {scheme}", bank, country_clean)
                     BIN_CACHE[bin_number] = result
+                    print(f"Success from {service['name']}: {result}")
                     return result
-                except Exception:
+                except Exception as e:
+                    print(f"Parsing error from {service['name']}: {e}")
                     BIN_CACHE[bin_number] = default_result
                     return default_result
             else:
+                print(f"Error response from {service['name']}: HTTP {resp.status_code}")
                 attempts += 1
                 continue
-        except Exception:
+        except Exception as e:
+            print(f"Exception during request to {service['name']}: {e}")
             attempts += 1
             continue
 
+    print(f"All BIN lookup services failed for BIN {bin_number}. Returning Unknown.")
     BIN_CACHE[bin_number] = default_result
     return default_result
